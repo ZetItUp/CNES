@@ -7,6 +7,7 @@ namespace CNES.Renderers
     {
         private int width;
         private int height;
+        private Color[] currentBuffer;
 
         public ConsoleRenderer() 
         { 
@@ -22,28 +23,29 @@ namespace CNES.Renderers
         {
             this.width = width;
             this.height = height;
+            currentBuffer = new Color[width * height];
             Console.Clear();
         }
 
         public void RenderFrame(Color[] framebuffer)
         {
+            Array.Copy(framebuffer, currentBuffer, framebuffer.Length);
+        }
+
+        public void Present()
+        {
             Console.SetCursorPosition(0, 0);
 
-            for(int y = 0; y < height; y++)
+            for (int y = 0; y < height; y += 2)
             {
-                for(int x = 0; x < width; x++)
+                for (int x = 0; x < width; x++)
                 {
-                    var color = framebuffer[y * width + x];
+                    var color = currentBuffer[y * width + x];
                     Console.Write(IsBright(color) ? "#" : " ");
                 }
 
                 Console.WriteLine();
             }
-        }
-
-        public void Present()
-        {
-
         }
 
         private bool IsBright(Color c)
