@@ -20,16 +20,18 @@ namespace CNES.Core
         {
             if(addr < 0x2000)
             {
+                // 0x0000-0x1FFF: Internal RAM (2Kb)
                 // Mirror ever 0x800 bytes in the 2 Kb RAM
                 return ram[addr % 0x0800];
             }
             else if(addr >= 0x8000)
             {
+                // 0x8000-0xFFFF: PRG-ROM (ROM from Cartridge)
                 // Program Rom Area
-                // If 16 Kb Program Rom, mirror it twice
                 if(prgRomSize == 16384)
                 {
-                    int mirrorAddr = addr % 0x4000;     // Mirror 16 Kb bank in 32 Kb space
+                    // If 16 Kb Program Rom, mirror it twice
+                    int mirrorAddr = addr % 0x4000;     // 0x8000 - 0xBFFF and 0xC000 - 0xFFFF is mirrored.
                     
                     return prgRom[mirrorAddr];
                 }

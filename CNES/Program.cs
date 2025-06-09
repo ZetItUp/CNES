@@ -22,5 +22,15 @@ public class Program
         Console.WriteLine($"Mapper: {romLoader.MapperId}");
         string trainerStatus = romLoader.HasTrainer ? "Yes" : "No";
         Console.WriteLine($"Trainer: {trainerStatus}");
+
+        var memBus = new MemoryBus(romLoader.PrgRom);
+        var cpu = new CPU6502(memBus);
+
+        cpu.Reset();
+
+        for(int i = 0; i < 70; i++)
+        {
+            cpu.Step();
+        }
     }
 }
