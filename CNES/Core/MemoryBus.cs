@@ -9,30 +9,36 @@ namespace CNES.Core
         private byte[] ram = new byte[2048];
         private byte[] prgRom;
         private int prgRomSize;
+        private PPU ppu;
 
-        public MemoryBus(byte[] prgRomData)
+        public MemoryBus(byte[] prgRomData, PPU ppu)
         {
             prgRom = prgRomData;
             prgRomSize = prgRomData.Length;
+            this.ppu = ppu;
         }
 
         public byte Read(ushort addr)
         {
-            if(addr < 0x2000)
+            if (addr < 0x2000)
             {
                 // 0x0000-0x1FFF: Internal RAM (2Kb)
                 // Mirror ever 0x800 bytes in the 2 Kb RAM
                 return ram[addr % 0x0800];
             }
-            else if(addr >= 0x8000)
+            else if (addr >= 0x2000 && addr <= 0x3FFF)
+            {
+                return ppu.ReadRegister((ushort)(0x2000 + (addr % 8))); // PPU registers (0x2000-0x3FFF)
+            }
+            else if (addr >= 0x8000)
             {
                 // 0x8000-0xFFFF: PRG-ROM (ROM from Cartridge)
                 // Program Rom Area
-                if(prgRomSize == 16384)
+                if (prgRomSize == 16384)
                 {
                     // If 16 Kb Program Rom, mirror it twice
                     int mirrorAddr = addr % 0x4000;     // 0x8000 - 0xBFFF and 0xC000 - 0xFFFF is mirrored.
-                    
+
                     return prgRom[mirrorAddr];
                 }
                 else
@@ -56,6 +62,11 @@ namespace CNES.Core
             {
                 // Write to internal RAM
                 ram[addr % 0x0800] = value;
+            }
+            else if(addr >= 0x2000 && addr <= 0x3FFF)
+            {
+                ppu.WriteRegister((ushort)(0x2000 + (addr % 8)), value); // PPU registers (0x2000-0x3FFF)
+                return;
             }
             else
             {

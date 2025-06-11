@@ -9,16 +9,12 @@ namespace CNES.Core
         private IRenderer renderer;
         private CPU6502 cpu;
         private MemoryBus memoryBus;
-
-        private int screenWidth = 256;
-        private int screenHeight = 240;
+        private PPU ppu;
 
         public Emulator(IRenderer renderer) 
         { 
-            this.renderer = renderer;
-            renderer.Initialize(screenWidth, screenHeight);
             var romLoader = new RomLoader();
-            romLoader.Load("./roms/coredump.nes");
+            romLoader.Load("./roms/SMB.nes");
 
             Console.WriteLine($"PRG Banks: {romLoader.PrgBanks}");
             Console.WriteLine($"CHR Banks: {romLoader.ChrBanks}");
@@ -26,8 +22,12 @@ namespace CNES.Core
             string trainerStatus = romLoader.HasTrainer ? "Yes" : "No";
             Console.WriteLine($"Trainer: {trainerStatus}");
 
-            memoryBus = new MemoryBus(romLoader.PrgRom);
+            ppu = new PPU();
+            this.renderer = renderer;
+            memoryBus = new MemoryBus(romLoader.PrgRom, ppu);
             cpu = new CPU6502(memoryBus);
+            renderer.Initialize(PPU.ScreenWidth, PPU.ScreenHeight);
+            ppu.GenerateTestFrame();
 
             cpu.Reset();
         }
@@ -36,16 +36,10 @@ namespace CNES.Core
         {
             cpu.Step();
 
-            Color[] framebuffer = new Color[screenWidth * screenHeight];
+            renderer.RenderFrame(ppu.Framebuffer);
+            renderer.Present();
 
-            for(int i = 0; i < framebuffer.Length; i++)
-            {
-                framebuffer[i] = Color.Black;
-            }
-
-            //renderer.Clear(Color.Black);
-            //renderer.RenderFrame(framebuffer);
-            //renderer.Present();
+            Console.ReadKey();
         }
     }
 }

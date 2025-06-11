@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Drawing;
+using CNES.Utils;
 
 namespace CNES.Renderers
 {
     public class ConsoleRenderer : IRenderer
     {
+        private bool UseAnsi = true;
         private int width;
         private int height;
         private Color[] currentBuffer;
@@ -27,9 +29,13 @@ namespace CNES.Renderers
             Console.Clear();
         }
 
-        public void RenderFrame(Color[] framebuffer)
+        public void RenderFrame(byte[] framebuffer)
         {
-            Array.Copy(framebuffer, currentBuffer, framebuffer.Length);
+            for (int i = 0; i < framebuffer.Length; i++)
+            {
+                byte index = framebuffer[i];
+                currentBuffer[i] = NESPalette.Colors[index % 64]; // Safety check
+            }
         }
 
         public void Present()
@@ -41,7 +47,15 @@ namespace CNES.Renderers
                 for (int x = 0; x < width; x++)
                 {
                     var color = currentBuffer[y * width + x];
-                    Console.Write(IsBright(color) ? "#" : " ");
+
+                    if (UseAnsi)
+                    {
+                        Console.Write(GetAnsiColorBlock(color));
+                    }
+                    else
+                    {
+                        Console.Write(IsBright(color) ? "#" : " ");
+                    }
                 }
 
                 Console.WriteLine();
@@ -51,6 +65,12 @@ namespace CNES.Renderers
         private bool IsBright(Color c)
         {
             return c.R + c.G + c.B > 128 * 3;
+        }
+
+        private string GetAnsiColorBlock(Color color)
+        {
+            // ANSI 24-bit foreground color + Unicode full block
+            return $"\x1b[38;2;{color.R};{color.G};{color.B}m█\x1b[0m";
         }
     }
 }

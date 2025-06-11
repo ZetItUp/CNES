@@ -520,17 +520,40 @@ namespace CNES.Core
                         // Store the value of the Y register into memory at the given address
                         memoryBus.Write(addr, Y);
 
-                        Logger.DebugLog($"STY 0x{addr:X4} <= Y ({X:Y2})");
+                        Logger.DebugLog($"STY 0x{addr:X4} <= Y ({Y:X2})");
+                        break;
+                    }
+                case 0x24:  // BIT Zero Page
+                    {
+                        // Read zero page address and value
+                        ushort addr = memoryBus.Read(PC++);
+                        byte value = memoryBus.Read(addr);
+
+                        // Set zero flag if (A & value) == 0
+                        SetFlag(FLAG_ZERO, (A & value) == 0);
+
+                        // Set negative flag to bit 7 of value
+                        SetFlag(FLAG_NEGATIVE, (value & FLAG_NEGATIVE) != 0);
+
+                        // Set overflow flag to bit 6 of value
+                        SetFlag(FLAG_OVERFLOW, (value & FLAG_OVERFLOW) != 0);
+
+                        Logger.DebugLog($"BIT ${addr:X2} = {value:X2}");
                         break;
                     }
                 case 0x2C: // BIT Absolute
                     {
+                        // Read absolute address and value
                         ushort addr = Absolute();
-                        PC += 2;
-                        byte value = Immediate();
+                        byte value = memoryBus.Read(addr);
 
+                        // Set zero flag if (A & value) == 0
                         SetFlag(FLAG_ZERO, (A & value) == 0);
+
+                        // Set negative flag to bit 7 of value
                         SetFlag(FLAG_NEGATIVE, (value & FLAG_NEGATIVE) != 0);
+
+                        // Set overflow flag to bit 6 of value
                         SetFlag(FLAG_OVERFLOW, (value & FLAG_OVERFLOW) != 0);
 
                         Logger.DebugLog($"BIT ${addr:X4} = {value:X2}");
@@ -540,6 +563,1185 @@ namespace CNES.Core
                     {
                         Logger.ErrorLog("Encountered illegal Opcode 0x02 (KIL) - CPU Halted!");
                         Halt = true;
+                        break;
+                    }
+                case 0xA5:  // LDA Zero Page
+                    {
+                        ushort addr = memoryBus.Read(PC++);
+                        byte value = memoryBus.Read(addr);
+
+                        A = value;
+
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"LDA ${addr:X2} => Reg A = {A:X2}");
+                        break;
+                    }
+                case 0xB5:  // LDA Zero Page,X
+                    {
+                        ushort addr = (byte)(memoryBus.Read(PC++) + X);
+                        byte value = memoryBus.Read(addr);
+
+                        A = value;
+
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"LDA ${addr:X2},X => Reg A = {A:X2}");
+                        break;
+                    }
+                case 0xAD:  // LDA Absolute
+                    {
+                        ushort addr = Absolute();
+                        byte value = memoryBus.Read(addr);
+
+                        A = value;
+
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"LDA ${addr:X4} => Reg A = {A:X2}");
+                        break;
+                    }
+                case 0xBD:  // LDA Absolute,X
+                    {
+                        ushort baseAddr = Absolute();
+                        ushort addr = (ushort)(baseAddr + X);
+                        byte value = memoryBus.Read(addr);
+
+                        A = value;
+
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"LDA ${baseAddr:X4},X => Reg A = {A:X2}");
+                        break;
+                    }
+                case 0xB9:  // LDA Absolute,Y
+                    {
+                        ushort baseAddr = Absolute();
+                        ushort addr = (ushort)(baseAddr + Y);
+                        byte value = memoryBus.Read(addr);
+
+                        A = value;
+
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"LDA ${baseAddr:X4},Y => Reg A = {A:X2}");
+                        break;
+                    }
+                case 0xA1:  // LDA (Indirect,X)
+                    {
+                        byte zpAddr = (byte)(memoryBus.Read(PC++) + X);
+                        ushort addr = (ushort)(memoryBus.Read((byte)zpAddr) | (memoryBus.Read((byte)(zpAddr + 1)) << 8));
+                        byte value = memoryBus.Read(addr);
+
+                        A = value;
+
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"LDA (${zpAddr:X2},X) => Reg A = {A:X2}");
+                        break;
+                    }
+                case 0xB1:  // LDA (Indirect),Y
+                    {
+                        byte zpAddr = memoryBus.Read(PC++);
+                        ushort baseAddr = (ushort)(memoryBus.Read(zpAddr) | (memoryBus.Read((byte)(zpAddr + 1)) << 8));
+                        ushort addr = (ushort)(baseAddr + Y);
+                        byte value = memoryBus.Read(addr);
+
+                        A = value;
+
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"LDA (${zpAddr:X2}),Y => Reg A = {A:X2}");
+                        break;
+                    }
+                case 0xE9:  // SBC Immediate
+                    {
+                        // Read the immediate value
+                        byte value = Immediate();
+
+                        // Subtract value and carry from accumulator
+                        int carry = (Status & FLAG_CARRY) != 0 ? 0 : 1;
+                        int result = A - value - carry;
+
+                        // Set carry if result >= 0
+                        SetFlag(FLAG_CARRY, result >= 0);
+
+                        // Set overflow flag
+                        bool overflow = ((A ^ value) & (A ^ result) & 0x80) != 0;
+                        SetFlag(FLAG_OVERFLOW, overflow);
+
+                        A = (byte)(result & 0xFF);
+
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"SBC #${value:X2} => A = {A:X2}");
+                        break;
+                    }
+                case 0xE5:  // SBC Zero Page
+                    {
+                        // Read zero page address and value
+                        ushort addr = memoryBus.Read(PC++);
+                        byte value = memoryBus.Read(addr);
+
+                        int carry = (Status & FLAG_CARRY) != 0 ? 0 : 1;
+                        int result = A - value - carry;
+
+                        SetFlag(FLAG_CARRY, result >= 0);
+
+                        bool overflow = ((A ^ value) & (A ^ result) & 0x80) != 0;
+                        SetFlag(FLAG_OVERFLOW, overflow);
+
+                        A = (byte)(result & 0xFF);
+
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"SBC ${addr:X2} => A = {A:X2}");
+                        break;
+                    }
+                case 0xF5:  // SBC Zero Page,X
+                    {
+                        // Read zero page address, add X register for indexed addressing
+                        ushort addr = (byte)(memoryBus.Read(PC++) + X);
+                        byte value = memoryBus.Read(addr);
+
+                        // Subtract value and carry from accumulator
+                        int carry = (Status & FLAG_CARRY) != 0 ? 0 : 1;
+                        int result = A - value - carry;
+
+                        // Set carry if result >= 0
+                        SetFlag(FLAG_CARRY, result >= 0);
+
+                        // Set overflow flag
+                        bool overflow = ((A ^ value) & (A ^ result) & 0x80) != 0;
+                        SetFlag(FLAG_OVERFLOW, overflow);
+
+                        A = (byte)(result & 0xFF);
+
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"SBC ${addr:X2},X => A = {A:X2}");
+                        break;
+                    }
+                case 0xED:  // SBC Absolute
+                    {
+                        // Read absolute address (16-bit)
+                        ushort addr = Absolute();
+                        byte value = memoryBus.Read(addr);
+
+                        // Subtract value and carry from accumulator
+                        int carry = (Status & FLAG_CARRY) != 0 ? 0 : 1;
+                        int result = A - value - carry;
+
+                        // Set carry if result >= 0
+                        SetFlag(FLAG_CARRY, result >= 0);
+
+                        // Set overflow flag
+                        bool overflow = ((A ^ value) & (A ^ result) & 0x80) != 0;
+                        SetFlag(FLAG_OVERFLOW, overflow);
+
+                        A = (byte)(result & 0xFF);
+
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"SBC ${addr:X4} => A = {A:X2}");
+                        break;
+                    }
+                case 0xF9:  // SBC Absolute,Y
+                    {
+                        // Read absolute address and add Y register for indexed addressing
+                        ushort baseAddr = Absolute();
+                        ushort addr = (ushort)(baseAddr + Y);
+                        byte value = memoryBus.Read(addr);
+
+                        // Subtract value and carry from accumulator
+                        int carry = (Status & FLAG_CARRY) != 0 ? 0 : 1;
+                        int result = A - value - carry;
+
+                        // Set carry if result >= 0
+                        SetFlag(FLAG_CARRY, result >= 0);
+
+                        // Set overflow flag
+                        bool overflow = ((A ^ value) & (A ^ result) & 0x80) != 0;
+                        SetFlag(FLAG_OVERFLOW, overflow);
+
+                        A = (byte)(result & 0xFF);
+
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"SBC ${baseAddr:X4},Y => A = {A:X2}");
+                        break;
+                    }
+                case 0xFD:  // SBC Absolute,X
+                    {
+                        // Read absolute address and add X register for indexed addressing
+                        ushort baseAddr = Absolute();
+                        ushort addr = (ushort)(baseAddr + X);
+                        byte value = memoryBus.Read(addr);
+
+                        // Subtract value and carry from accumulator
+                        int carry = (Status & FLAG_CARRY) != 0 ? 0 : 1;
+                        int result = A - value - carry;
+
+                        // Set carry if result >= 0
+                        SetFlag(FLAG_CARRY, result >= 0);
+
+                        // Set overflow flag
+                        bool overflow = ((A ^ value) & (A ^ result) & 0x80) != 0;
+                        SetFlag(FLAG_OVERFLOW, overflow);
+
+                        A = (byte)(result & 0xFF);
+
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"SBC ${baseAddr:X4},X => A = {A:X2}");
+                        break;
+                    }
+                case 0xE1:  // SBC (Indirect,X)
+                    {
+                        // Read zero page address, add X for indexed indirect addressing
+                        byte zpAddr = (byte)(memoryBus.Read(PC++) + X);
+                        ushort addr = (ushort)(memoryBus.Read((byte)zpAddr) | (memoryBus.Read((byte)(zpAddr + 1)) << 8));
+                        byte value = memoryBus.Read(addr);
+
+                        // Subtract value and carry from accumulator
+                        int carry = (Status & FLAG_CARRY) != 0 ? 0 : 1;
+                        int result = A - value - carry;
+
+                        // Set carry if result >= 0
+                        SetFlag(FLAG_CARRY, result >= 0);
+
+                        // Set overflow flag
+                        bool overflow = ((A ^ value) & (A ^ result) & 0x80) != 0;
+                        SetFlag(FLAG_OVERFLOW, overflow);
+
+                        A = (byte)(result & 0xFF);
+
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"SBC (${zpAddr:X2},X) => A = {A:X2}");
+                        break;
+                    }
+                case 0xF1:  // SBC (Indirect),Y
+                    {
+                        // Read zero page address, fetch pointer, add Y for indirect indexed addressing
+                        byte zpAddr = memoryBus.Read(PC++);
+                        ushort baseAddr = (ushort)(memoryBus.Read(zpAddr) | (memoryBus.Read((byte)(zpAddr + 1)) << 8));
+                        ushort addr = (ushort)(baseAddr + Y);
+                        byte value = memoryBus.Read(addr);
+
+                        // Subtract value and carry from accumulator
+                        int carry = (Status & FLAG_CARRY) != 0 ? 0 : 1;
+                        int result = A - value - carry;
+
+                        // Set carry if result >= 0
+                        SetFlag(FLAG_CARRY, result >= 0);
+
+                        // Set overflow flag
+                        bool overflow = ((A ^ value) & (A ^ result) & 0x80) != 0;
+                        SetFlag(FLAG_OVERFLOW, overflow);
+
+                        A = (byte)(result & 0xFF);
+
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"SBC (${zpAddr:X2}),Y => A = {A:X2}");
+                        break;
+                    }
+                case 0x09:  // ORA Immediate
+                    {
+                        // Read the immediate value
+                        byte value = Immediate();
+
+                        // Bitwise OR with accumulator
+                        A = (byte)(A | value);
+
+                        // Update zero and negative flags based on the result
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"ORA #${value:X2} => A = {A:X2}");
+                        break;
+                    }
+                case 0x05:  // ORA Zero Page
+                    {
+                        // Read zero page address and value
+                        ushort addr = memoryBus.Read(PC++);
+                        byte value = memoryBus.Read(addr);
+
+                        // Bitwise OR with accumulator
+                        A = (byte)(A | value);
+
+                        // Update zero and negative flags based on the result
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"ORA ${addr:X2} => A = {A:X2}");
+                        break;
+                    }
+                case 0x15:  // ORA Zero Page,X
+                    {
+                        // Read zero page address, add X register for indexed addressing
+                        ushort addr = (byte)(memoryBus.Read(PC++) + X);
+                        byte value = memoryBus.Read(addr);
+
+                        // Bitwise OR with accumulator
+                        A = (byte)(A | value);
+
+                        // Update zero and negative flags based on the result
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"ORA ${addr:X2},X => A = {A:X2}");
+                        break;
+                    }
+                case 0x0D:  // ORA Absolute
+                    {
+                        // Read absolute address (16-bit)
+                        ushort addr = Absolute();
+                        byte value = memoryBus.Read(addr);
+
+                        // Bitwise OR with accumulator
+                        A = (byte)(A | value);
+
+                        // Update zero and negative flags based on the result
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"ORA ${addr:X4} => A = {A:X2}");
+                        break;
+                    }
+                case 0x1D:  // ORA Absolute,X
+                    {
+                        // Read absolute address and add X register for indexed addressing
+                        ushort baseAddr = Absolute();
+                        ushort addr = (ushort)(baseAddr + X);
+                        byte value = memoryBus.Read(addr);
+
+                        // Bitwise OR with accumulator
+                        A = (byte)(A | value);
+
+                        // Update zero and negative flags based on the result
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"ORA ${baseAddr:X4},X => A = {A:X2}");
+                        break;
+                    }
+                case 0x19:  // ORA Absolute,Y
+                    {
+                        // Read absolute address and add Y register for indexed addressing
+                        ushort baseAddr = Absolute();
+                        ushort addr = (ushort)(baseAddr + Y);
+                        byte value = memoryBus.Read(addr);
+
+                        // Bitwise OR with accumulator
+                        A = (byte)(A | value);
+
+                        // Update zero and negative flags based on the result
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"ORA ${baseAddr:X4},Y => A = {A:X2}");
+                        break;
+                    }
+                case 0x01:  // ORA (Indirect,X)
+                    {
+                        // Read zero page address, add X for indexed indirect addressing
+                        byte zpAddr = (byte)(memoryBus.Read(PC++) + X);
+                        ushort addr = (ushort)(memoryBus.Read((byte)zpAddr) | (memoryBus.Read((byte)(zpAddr + 1)) << 8));
+                        byte value = memoryBus.Read(addr);
+
+                        // Bitwise OR with accumulator
+                        A = (byte)(A | value);
+
+                        // Update zero and negative flags based on the result
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"ORA (${zpAddr:X2},X) => A = {A:X2}");
+                        break;
+                    }
+                case 0x11:  // ORA (Indirect),Y
+                    {
+                        // Read zero page address, fetch pointer, add Y for indirect indexed addressing
+                        byte zpAddr = memoryBus.Read(PC++);
+                        ushort baseAddr = (ushort)(memoryBus.Read(zpAddr) | (memoryBus.Read((byte)(zpAddr + 1)) << 8));
+                        ushort addr = (ushort)(baseAddr + Y);
+                        byte value = memoryBus.Read(addr);
+
+                        // Bitwise OR with accumulator
+                        A = (byte)(A | value);
+
+                        // Update zero and negative flags based on the result
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"ORA (${zpAddr:X2}),Y => A = {A:X2}");
+                        break;
+                    }
+                case 0x49:  // EOR Immediate
+                    {
+                        // Read the immediate value
+                        byte value = Immediate();
+
+                        // Bitwise exclusive OR with accumulator
+                        A = (byte)(A ^ value);
+
+                        // Update zero and negative flags based on the result
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"EOR #${value:X2} => A = {A:X2}");
+                        break;
+                    }
+                case 0x45:  // EOR Zero Page
+                    {
+                        // Read zero page address and value
+                        ushort addr = memoryBus.Read(PC++);
+                        byte value = memoryBus.Read(addr);
+
+                        // Bitwise exclusive OR with accumulator
+                        A = (byte)(A ^ value);
+
+                        // Update zero and negative flags based on the result
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"EOR ${addr:X2} => A = {A:X2}");
+                        break;
+                    }
+                case 0x55:  // EOR Zero Page,X
+                    {
+                        // Read zero page address, add X register for indexed addressing
+                        ushort addr = (byte)(memoryBus.Read(PC++) + X);
+                        byte value = memoryBus.Read(addr);
+
+                        // Bitwise exclusive OR with accumulator
+                        A = (byte)(A ^ value);
+
+                        // Update zero and negative flags based on the result
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"EOR ${addr:X2},X => A = {A:X2}");
+                        break;
+                    }
+                case 0x4D:  // EOR Absolute
+                    {
+                        // Read absolute address (16-bit)
+                        ushort addr = Absolute();
+                        byte value = memoryBus.Read(addr);
+
+                        // Bitwise exclusive OR with accumulator
+                        A = (byte)(A ^ value);
+
+                        // Update zero and negative flags based on the result
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"EOR ${addr:X4} => A = {A:X2}");
+                        break;
+                    }
+                case 0x5D:  // EOR Absolute,X
+                    {
+                        // Read absolute address and add X register for indexed addressing
+                        ushort baseAddr = Absolute();
+                        ushort addr = (ushort)(baseAddr + X);
+                        byte value = memoryBus.Read(addr);
+
+                        // Bitwise exclusive OR with accumulator
+                        A = (byte)(A ^ value);
+
+                        // Update zero and negative flags based on the result
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"EOR ${baseAddr:X4},X => A = {A:X2}");
+                        break;
+                    }
+                case 0x59:  // EOR Absolute,Y
+                    {
+                        // Read absolute address and add Y register for indexed addressing
+                        ushort baseAddr = Absolute();
+                        ushort addr = (ushort)(baseAddr + Y);
+                        byte value = memoryBus.Read(addr);
+
+                        // Bitwise exclusive OR with accumulator
+                        A = (byte)(A ^ value);
+
+                        // Update zero and negative flags based on the result
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"EOR ${baseAddr:X4},Y => A = {A:X2}");
+                        break;
+                    }
+                case 0x41:  // EOR (Indirect,X)
+                    {
+                        // Read zero page address, add X for indexed indirect addressing
+                        byte zpAddr = (byte)(memoryBus.Read(PC++) + X);
+                        ushort addr = (ushort)(memoryBus.Read((byte)zpAddr) | (memoryBus.Read((byte)(zpAddr + 1)) << 8));
+                        byte value = memoryBus.Read(addr);
+
+                        // Bitwise exclusive OR with accumulator
+                        A = (byte)(A ^ value);
+
+                        // Update zero and negative flags based on the result
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"EOR (${zpAddr:X2},X) => A = {A:X2}");
+                        break;
+                    }
+                case 0x51:  // EOR (Indirect),Y
+                    {
+                        // Read zero page address, fetch pointer, add Y for indirect indexed addressing
+                        byte zpAddr = memoryBus.Read(PC++);
+                        ushort baseAddr = (ushort)(memoryBus.Read(zpAddr) | (memoryBus.Read((byte)(zpAddr + 1)) << 8));
+                        ushort addr = (ushort)(baseAddr + Y);
+                        byte value = memoryBus.Read(addr);
+
+                        // Bitwise exclusive OR with accumulator
+                        A = (byte)(A ^ value);
+
+                        // Update zero and negative flags based on the result
+                        SetZeroAndNegativeFlags(A);
+
+                        Logger.DebugLog($"EOR (${zpAddr:X2}),Y => A = {A:X2}");
+                        break;
+                    }
+                case 0x9A:  // TXS - Transfer X to Stack Pointer
+                    {
+                        // Copy the value from the X register to the stack pointer
+                        SP = X;
+
+                        Logger.DebugLog($"TXS - Transfer X ({X:X2}) to SP, SP = ({SP:X2})");
+                        break;
+                    }
+                case 0xBA:  // TSX - Transfer Stack Pointer to X
+                    {
+                        // Copy the value from the stack pointer to the X register
+                        X = SP;
+
+                        // Update zero and negative flags based on the X value
+                        SetZeroAndNegativeFlags(X);
+
+                        Logger.DebugLog($"TSX - Transfer SP ({SP:X2}) to X, X = ({X:X2})");
+                        break;
+                    }
+                case 0x90:  // BCC - Branch if Carry Clear
+                    {
+                        // Read relative offset as signed byte
+                        sbyte offset = (sbyte)Immediate();
+                        if (!GetFlag(FLAG_CARRY))
+                        {
+                            ushort oldPC = PC;
+                            PC = (ushort)(PC + offset);
+                            Logger.DebugLog($"BCC to 0x{PC:X4} (offset {offset}) from 0x{oldPC:X4}");
+                        }
+                        else
+                        {
+                            Logger.DebugLog("BCC not taken");
+                        }
+                        break;
+                    }
+                case 0xB0:  // BCS - Branch if Carry Set
+                    {
+                        sbyte offset = (sbyte)Immediate();
+                        if (GetFlag(FLAG_CARRY))
+                        {
+                            ushort oldPC = PC;
+                            PC = (ushort)(PC + offset);
+                            Logger.DebugLog($"BCS to 0x{PC:X4} (offset {offset}) from 0x{oldPC:X4}");
+                        }
+                        else
+                        {
+                            Logger.DebugLog("BCS not taken");
+                        }
+                        break;
+                    }
+                case 0xF0:  // BEQ - Branch if Equal (Zero set)
+                    {
+                        sbyte offset = (sbyte)Immediate();
+                        if (GetFlag(FLAG_ZERO))
+                        {
+                            ushort oldPC = PC;
+                            PC = (ushort)(PC + offset);
+                            Logger.DebugLog($"BEQ to 0x{PC:X4} (offset {offset}) from 0x{oldPC:X4}");
+                        }
+                        else
+                        {
+                            Logger.DebugLog("BEQ not taken");
+                        }
+                        break;
+                    }
+                case 0x30:  // BMI - Branch if Minus (Negative set)
+                    {
+                        sbyte offset = (sbyte)Immediate();
+                        if (GetFlag(FLAG_NEGATIVE))
+                        {
+                            ushort oldPC = PC;
+                            PC = (ushort)(PC + offset);
+                            Logger.DebugLog($"BMI to 0x{PC:X4} (offset {offset}) from 0x{oldPC:X4}");
+                        }
+                        else
+                        {
+                            Logger.DebugLog("BMI not taken");
+                        }
+                        break;
+                    }
+                case 0xD0:  // BNE - Branch if Not Equal (Zero clear)
+                    {
+                        sbyte offset = (sbyte)Immediate();
+                        if (!GetFlag(FLAG_ZERO))
+                        {
+                            ushort oldPC = PC;
+                            PC = (ushort)(PC + offset);
+                            Logger.DebugLog($"BNE to 0x{PC:X4} (offset {offset}) from 0x{oldPC:X4}");
+                        }
+                        else
+                        {
+                            Logger.DebugLog("BNE not taken");
+                        }
+                        break;
+                    }
+                case 0x10:  // BPL - Branch if Plus (Negative clear)
+                    {
+                        sbyte offset = (sbyte)Immediate();
+                        if (!GetFlag(FLAG_NEGATIVE))
+                        {
+                            ushort oldPC = PC;
+                            PC = (ushort)(PC + offset);
+                            Logger.DebugLog($"BPL to 0x{PC:X4} (offset {offset}) from 0x{oldPC:X4}");
+                        }
+                        else
+                        {
+                            Logger.DebugLog("BPL not taken");
+                        }
+                        break;
+                    }
+                case 0x50:  // BVC - Branch if Overflow Clear
+                    {
+                        sbyte offset = (sbyte)Immediate();
+                        if (!GetFlag(FLAG_OVERFLOW))
+                        {
+                            ushort oldPC = PC;
+                            PC = (ushort)(PC + offset);
+                            Logger.DebugLog($"BVC to 0x{PC:X4} (offset {offset}) from 0x{oldPC:X4}");
+                        }
+                        else
+                        {
+                            Logger.DebugLog("BVC not taken");
+                        }
+                        break;
+                    }
+                case 0x70:  // BVS - Branch if Overflow Set
+                    {
+                        sbyte offset = (sbyte)Immediate();
+                        if (GetFlag(FLAG_OVERFLOW))
+                        {
+                            ushort oldPC = PC;
+                            PC = (ushort)(PC + offset);
+                            Logger.DebugLog($"BVS to 0x{PC:X4} (offset {offset}) from 0x{oldPC:X4}");
+                        }
+                        else
+                        {
+                            Logger.DebugLog("BVS not taken");
+                        }
+                        break;
+                    }
+                case 0x0A:  // ASL Accumulator
+                    {
+                        // Shift accumulator left by 1, bit 7 to carry
+                        SetFlag(FLAG_CARRY, (A & 0x80) != 0);
+                        A = (byte)(A << 1);
+                        SetZeroAndNegativeFlags(A);
+                        Logger.DebugLog($"ASL A => A = {A:X2}");
+                        break;
+                    }
+                case 0x06:  // ASL Zero Page
+                    {
+                        // Shift memory at zero page address left by 1
+                        ushort addr = memoryBus.Read(PC++);
+                        byte value = memoryBus.Read(addr);
+                        SetFlag(FLAG_CARRY, (value & 0x80) != 0);
+                        value = (byte)(value << 1);
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"ASL ${addr:X2} => {value:X2}");
+                        break;
+                    }
+                case 0x16:  // ASL Zero Page,X
+                    {
+                        // Shift memory at zero page address + X left by 1
+                        ushort addr = (byte)(memoryBus.Read(PC++) + X);
+                        byte value = memoryBus.Read(addr);
+                        SetFlag(FLAG_CARRY, (value & 0x80) != 0);
+                        value = (byte)(value << 1);
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"ASL ${addr:X2},X => {value:X2}");
+                        break;
+                    }
+                case 0x0E:  // ASL Absolute
+                    {
+                        // Shift memory at absolute address left by 1
+                        ushort addr = Absolute();
+                        byte value = memoryBus.Read(addr);
+                        SetFlag(FLAG_CARRY, (value & 0x80) != 0);
+                        value = (byte)(value << 1);
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"ASL ${addr:X4} => {value:X2}");
+                        break;
+                    }
+                case 0x1E:  // ASL Absolute,X
+                    {
+                        // Shift memory at absolute address + X left by 1
+                        ushort baseAddr = Absolute();
+                        ushort addr = (ushort)(baseAddr + X);
+                        byte value = memoryBus.Read(addr);
+                        SetFlag(FLAG_CARRY, (value & 0x80) != 0);
+                        value = (byte)(value << 1);
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"ASL ${baseAddr:X4},X => {value:X2}");
+                        break;
+                    }
+                case 0x4A:  // LSR Accumulator
+                    {
+                        // Shift accumulator right by 1, bit 0 to carry
+                        SetFlag(FLAG_CARRY, (A & 0x01) != 0);
+                        A = (byte)(A >> 1);
+                        SetZeroAndNegativeFlags(A);
+                        Logger.DebugLog($"LSR A => A = {A:X2}");
+                        break;
+                    }
+                case 0x46:  // LSR Zero Page
+                    {
+                        // Shift memory at zero page address right by 1
+                        ushort addr = memoryBus.Read(PC++);
+                        byte value = memoryBus.Read(addr);
+                        SetFlag(FLAG_CARRY, (value & 0x01) != 0);
+                        value = (byte)(value >> 1);
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"LSR ${addr:X2} => {value:X2}");
+                        break;
+                    }
+                case 0x56:  // LSR Zero Page,X
+                    {
+                        // Shift memory at zero page address + X right by 1
+                        ushort addr = (byte)(memoryBus.Read(PC++) + X);
+                        byte value = memoryBus.Read(addr);
+                        SetFlag(FLAG_CARRY, (value & 0x01) != 0);
+                        value = (byte)(value >> 1);
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"LSR ${addr:X2},X => {value:X2}");
+                        break;
+                    }
+                case 0x4E:  // LSR Absolute
+                    {
+                        // Shift memory at absolute address right by 1
+                        ushort addr = Absolute();
+                        byte value = memoryBus.Read(addr);
+                        SetFlag(FLAG_CARRY, (value & 0x01) != 0);
+                        value = (byte)(value >> 1);
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"LSR ${addr:X4} => {value:X2}");
+                        break;
+                    }
+                case 0x5E:  // LSR Absolute,X
+                    {
+                        // Shift memory at absolute address + X right by 1
+                        ushort baseAddr = Absolute();
+                        ushort addr = (ushort)(baseAddr + X);
+                        byte value = memoryBus.Read(addr);
+                        SetFlag(FLAG_CARRY, (value & 0x01) != 0);
+                        value = (byte)(value >> 1);
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"LSR ${baseAddr:X4},X => {value:X2}");
+                        break;
+                    }
+                case 0x2A:  // ROL Accumulator
+                    {
+                        // Rotate accumulator left through carry
+                        bool oldCarry = GetFlag(FLAG_CARRY);
+                        SetFlag(FLAG_CARRY, (A & 0x80) != 0);
+                        A = (byte)((A << 1) | (oldCarry ? 1 : 0));
+                        SetZeroAndNegativeFlags(A);
+                        Logger.DebugLog($"ROL A => A = {A:X2}");
+                        break;
+                    }
+                case 0x26:  // ROL Zero Page
+                    {
+                        // Rotate memory at zero page address left through carry
+                        ushort addr = memoryBus.Read(PC++);
+                        byte value = memoryBus.Read(addr);
+                        bool oldCarry = GetFlag(FLAG_CARRY);
+                        SetFlag(FLAG_CARRY, (value & 0x80) != 0);
+                        value = (byte)((value << 1) | (oldCarry ? 1 : 0));
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"ROL ${addr:X2} => {value:X2}");
+                        break;
+                    }
+                case 0x36:  // ROL Zero Page,X
+                    {
+                        // Rotate memory at zero page address + X left through carry
+                        ushort addr = (byte)(memoryBus.Read(PC++) + X);
+                        byte value = memoryBus.Read(addr);
+                        bool oldCarry = GetFlag(FLAG_CARRY);
+                        SetFlag(FLAG_CARRY, (value & 0x80) != 0);
+                        value = (byte)((value << 1) | (oldCarry ? 1 : 0));
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"ROL ${addr:X2},X => {value:X2}");
+                        break;
+                    }
+                case 0x2E:  // ROL Absolute
+                    {
+                        // Rotate memory at absolute address left through carry
+                        ushort addr = Absolute();
+                        byte value = memoryBus.Read(addr);
+                        bool oldCarry = GetFlag(FLAG_CARRY);
+                        SetFlag(FLAG_CARRY, (value & 0x80) != 0);
+                        value = (byte)((value << 1) | (oldCarry ? 1 : 0));
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"ROL ${addr:X4} => {value:X2}");
+                        break;
+                    }
+                case 0x3E:  // ROL Absolute,X
+                    {
+                        // Rotate memory at absolute address + X left through carry
+                        ushort baseAddr = Absolute();
+                        ushort addr = (ushort)(baseAddr + X);
+                        byte value = memoryBus.Read(addr);
+                        bool oldCarry = GetFlag(FLAG_CARRY);
+                        SetFlag(FLAG_CARRY, (value & 0x80) != 0);
+                        value = (byte)((value << 1) | (oldCarry ? 1 : 0));
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"ROL ${baseAddr:X4},X => {value:X2}");
+                        break;
+                    }
+                case 0x6A:  // ROR Accumulator
+                    {
+                        // Rotate accumulator right through carry
+                        bool oldCarry = GetFlag(FLAG_CARRY);
+                        SetFlag(FLAG_CARRY, (A & 0x01) != 0);
+                        A = (byte)((A >> 1) | (oldCarry ? 0x80 : 0));
+                        SetZeroAndNegativeFlags(A);
+                        Logger.DebugLog($"ROR A => A = {A:X2}");
+                        break;
+                    }
+                case 0x66:  // ROR Zero Page
+                    {
+                        // Rotate memory at zero page address right through carry
+                        ushort addr = memoryBus.Read(PC++);
+                        byte value = memoryBus.Read(addr);
+                        bool oldCarry = GetFlag(FLAG_CARRY);
+                        SetFlag(FLAG_CARRY, (value & 0x01) != 0);
+                        value = (byte)((value >> 1) | (oldCarry ? 0x80 : 0));
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"ROR ${addr:X2} => {value:X2}");
+                        break;
+                    }
+                case 0x76:  // ROR Zero Page,X
+                    {
+                        // Rotate memory at zero page address + X right through carry
+                        ushort addr = (byte)(memoryBus.Read(PC++) + X);
+                        byte value = memoryBus.Read(addr);
+                        bool oldCarry = GetFlag(FLAG_CARRY);
+                        SetFlag(FLAG_CARRY, (value & 0x01) != 0);
+                        value = (byte)((value >> 1) | (oldCarry ? 0x80 : 0));
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"ROR ${addr:X2},X => {value:X2}");
+                        break;
+                    }
+                case 0x6E:  // ROR Absolute
+                    {
+                        // Rotate memory at absolute address right through carry
+                        ushort addr = Absolute();
+                        byte value = memoryBus.Read(addr);
+                        bool oldCarry = GetFlag(FLAG_CARRY);
+                        SetFlag(FLAG_CARRY, (value & 0x01) != 0);
+                        value = (byte)((value >> 1) | (oldCarry ? 0x80 : 0));
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"ROR ${addr:X4} => {value:X2}");
+                        break;
+                    }
+                case 0x7E:  // ROR Absolute,X
+                    {
+                        // Rotate memory at absolute address + X right through carry
+                        ushort baseAddr = Absolute();
+                        ushort addr = (ushort)(baseAddr + X);
+                        byte value = memoryBus.Read(addr);
+                        bool oldCarry = GetFlag(FLAG_CARRY);
+                        SetFlag(FLAG_CARRY, (value & 0x01) != 0);
+                        value = (byte)((value >> 1) | (oldCarry ? 0x80 : 0));
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"ROR ${baseAddr:X4},X => {value:X2}");
+                        break;
+                    }
+                case 0xE6:  // INC Zero Page
+                    {
+                        // Increment memory at zero page address by 1
+                        ushort addr = memoryBus.Read(PC++);
+                        byte value = (byte)(memoryBus.Read(addr) + 1);
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"INC ${addr:X2} => {value:X2}");
+                        break;
+                    }
+                case 0xF6:  // INC Zero Page,X
+                    {
+                        // Increment memory at zero page address + X by 1
+                        ushort addr = (byte)(memoryBus.Read(PC++) + X);
+                        byte value = (byte)(memoryBus.Read(addr) + 1);
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"INC ${addr:X2},X => {value:X2}");
+                        break;
+                    }
+                case 0xEE:  // INC Absolute
+                    {
+                        // Increment memory at absolute address by 1
+                        ushort addr = Absolute();
+                        byte value = (byte)(memoryBus.Read(addr) + 1);
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"INC ${addr:X4} => {value:X2}");
+                        break;
+                    }
+                case 0xFE:  // INC Absolute,X
+                    {
+                        // Increment memory at absolute address + X by 1
+                        ushort baseAddr = Absolute();
+                        ushort addr = (ushort)(baseAddr + X);
+                        byte value = (byte)(memoryBus.Read(addr) + 1);
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"INC ${baseAddr:X4},X => {value:X2}");
+                        break;
+                    }
+                case 0xC6:  // DEC Zero Page
+                    {
+                        // Decrement memory at zero page address by 1
+                        ushort addr = memoryBus.Read(PC++);
+                        byte value = (byte)(memoryBus.Read(addr) - 1);
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"DEC ${addr:X2} => {value:X2}");
+                        break;
+                    }
+                case 0xD6:  // DEC Zero Page,X
+                    {
+                        // Decrement memory at zero page address + X by 1
+                        ushort addr = (byte)(memoryBus.Read(PC++) + X);
+                        byte value = (byte)(memoryBus.Read(addr) - 1);
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"DEC ${addr:X2},X => {value:X2}");
+                        break;
+                    }
+                case 0xCE:  // DEC Absolute
+                    {
+                        // Decrement memory at absolute address by 1
+                        ushort addr = Absolute();
+                        byte value = (byte)(memoryBus.Read(addr) - 1);
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"DEC ${addr:X4} => {value:X2}");
+                        break;
+                    }
+                case 0xDE:  // DEC Absolute,X
+                    {
+                        // Decrement memory at absolute address + X by 1
+                        ushort baseAddr = Absolute();
+                        ushort addr = (ushort)(baseAddr + X);
+                        byte value = (byte)(memoryBus.Read(addr) - 1);
+                        memoryBus.Write(addr, value);
+                        SetZeroAndNegativeFlags(value);
+                        Logger.DebugLog($"DEC ${baseAddr:X4},X => {value:X2}");
+                        break;
+                    }
+                case 0xE0:  // CPX Immediate
+                    {
+                        byte value = Immediate();
+                        int result = X - value;
+                        SetFlag(FLAG_CARRY, X >= value);
+                        SetZeroAndNegativeFlags((byte)result);
+                        Logger.DebugLog($"CPX #${value:X2} => X = {X:X2}, Flags updated");
+                        break;
+                    }
+                case 0xE4:  // CPX Zero Page
+                    {
+                        ushort addr = memoryBus.Read(PC++);
+                        byte value = memoryBus.Read(addr);
+                        int result = X - value;
+                        SetFlag(FLAG_CARRY, X >= value);
+                        SetZeroAndNegativeFlags((byte)result);
+                        Logger.DebugLog($"CPX ${addr:X2} => X = {X:X2}, Flags updated");
+                        break;
+                    }
+                case 0xEC:  // CPX Absolute
+                    {
+                        ushort addr = Absolute();
+                        byte value = memoryBus.Read(addr);
+                        int result = X - value;
+                        SetFlag(FLAG_CARRY, X >= value);
+                        SetZeroAndNegativeFlags((byte)result);
+                        Logger.DebugLog($"CPX ${addr:X4} => X = {X:X2}, Flags updated");
+                        break;
+                    }
+                case 0xC0:  // CPY Immediate
+                    {
+                        byte value = Immediate();
+                        int result = Y - value;
+                        SetFlag(FLAG_CARRY, Y >= value);
+                        SetZeroAndNegativeFlags((byte)result);
+                        Logger.DebugLog($"CPY #${value:X2} => Y = {Y:X2}, Flags updated");
+                        break;
+                    }
+                case 0xC4:  // CPY Zero Page
+                    {
+                        ushort addr = memoryBus.Read(PC++);
+                        byte value = memoryBus.Read(addr);
+                        int result = Y - value;
+                        SetFlag(FLAG_CARRY, Y >= value);
+                        SetZeroAndNegativeFlags((byte)result);
+                        Logger.DebugLog($"CPY ${addr:X2} => Y = {Y:X2}, Flags updated");
+                        break;
+                    }
+                case 0xCC:  // CPY Absolute
+                    {
+                        ushort addr = Absolute();
+                        byte value = memoryBus.Read(addr);
+                        int result = Y - value;
+                        SetFlag(FLAG_CARRY, Y >= value);
+                        SetZeroAndNegativeFlags((byte)result);
+                        Logger.DebugLog($"CPY ${addr:X4} => Y = {Y:X2}, Flags updated");
+                        break;
+                    }
+                case 0xA6:  // LDX Zero Page
+                    {
+                        ushort addr = memoryBus.Read(PC++);
+                        byte value = memoryBus.Read(addr);
+                        X = value;
+                        SetZeroAndNegativeFlags(X);
+                        Logger.DebugLog($"LDX ${addr:X2} => X = {X:X2}");
+                        break;
+                    }
+                case 0xB6:  // LDX Zero Page,Y
+                    {
+                        ushort addr = (byte)(memoryBus.Read(PC++) + Y);
+                        byte value = memoryBus.Read(addr);
+                        X = value;
+                        SetZeroAndNegativeFlags(X);
+                        Logger.DebugLog($"LDX ${addr:X2},Y => X = {X:X2}");
+                        break;
+                    }
+                case 0xAE:  // LDX Absolute
+                    {
+                        ushort addr = Absolute();
+                        byte value = memoryBus.Read(addr);
+                        X = value;
+                        SetZeroAndNegativeFlags(X);
+                        Logger.DebugLog($"LDX ${addr:X4} => X = {X:X2}");
+                        break;
+                    }
+                case 0xBE:  // LDX Absolute,Y
+                    {
+                        ushort baseAddr = Absolute();
+                        ushort addr = (ushort)(baseAddr + Y);
+                        byte value = memoryBus.Read(addr);
+                        X = value;
+                        SetZeroAndNegativeFlags(X);
+                        Logger.DebugLog($"LDX ${baseAddr:X4},Y => X = {X:X2}");
+                        break;
+                    }
+                case 0xA4:  // LDY Zero Page
+                    {
+                        ushort addr = memoryBus.Read(PC++);
+                        byte value = memoryBus.Read(addr);
+                        Y = value;
+                        SetZeroAndNegativeFlags(Y);
+                        Logger.DebugLog($"LDY ${addr:X2} => Y = {Y:X2}");
+                        break;
+                    }
+                case 0xB4:  // LDY Zero Page,X
+                    {
+                        ushort addr = (byte)(memoryBus.Read(PC++) + X);
+                        byte value = memoryBus.Read(addr);
+                        Y = value;
+                        SetZeroAndNegativeFlags(Y);
+                        Logger.DebugLog($"LDY ${addr:X2},X => Y = {Y:X2}");
+                        break;
+                    }
+                case 0xAC:  // LDY Absolute
+                    {
+                        ushort addr = Absolute();
+                        byte value = memoryBus.Read(addr);
+                        Y = value;
+                        SetZeroAndNegativeFlags(Y);
+                        Logger.DebugLog($"LDY ${addr:X4} => Y = {Y:X2}");
+                        break;
+                    }
+                case 0xBC:  // LDY Absolute,X
+                    {
+                        ushort baseAddr = Absolute();
+                        ushort addr = (ushort)(baseAddr + X);
+                        byte value = memoryBus.Read(addr);
+                        Y = value;
+                        SetZeroAndNegativeFlags(Y);
+                        Logger.DebugLog($"LDY ${baseAddr:X4},X => Y = {Y:X2}");
+                        break;
+                    }
+                case 0x86:  // STX Zero Page
+                    {
+                        ushort addr = memoryBus.Read(PC++);
+                        memoryBus.Write(addr, X);
+                        Logger.DebugLog($"STX ${addr:X2} <= X ({X:X2})");
+                        break;
+                    }
+                case 0x96:  // STX Zero Page,Y
+                    {
+                        ushort addr = (byte)(memoryBus.Read(PC++) + Y);
+                        memoryBus.Write(addr, X);
+                        Logger.DebugLog($"STX ${addr:X2},Y <= X ({X:X2})");
+                        break;
+                    }
+                case 0x84:  // STY Zero Page
+                    {
+                        ushort addr = memoryBus.Read(PC++);
+                        memoryBus.Write(addr, Y);
+                        Logger.DebugLog($"STY ${addr:X2} <= Y ({Y:X2})");
+                        break;
+                    }
+                case 0x94:  // STY Zero Page,X
+                    {
+                        ushort addr = (byte)(memoryBus.Read(PC++) + X);
+                        memoryBus.Write(addr, Y);
+                        Logger.DebugLog($"STY ${addr:X2},X <= Y ({Y:X2})");
+                        break;
+                    }
+                case 0x6C:  // JMP (Indirect)
+                    {
+                        // Fetch pointer address (little-endian)
+                        ushort ptr = Absolute();
+
+                        // Emulate 6502 page boundary hardware bug:
+                        // If the pointer address crosses a page (e.g., $xxFF), the high byte is fetched from $xx00
+                        byte lo = memoryBus.Read(ptr);
+                        byte hi;
+                        if ((ptr & 0x00FF) == 0x00FF)
+                        {
+                            // Simulate page boundary bug
+                            hi = memoryBus.Read((ushort)(ptr & 0xFF00));
+                        }
+                        else
+                        {
+                            hi = memoryBus.Read((ushort)(ptr + 1));
+                        }
+                        ushort addr = (ushort)((hi << 8) | lo);
+
+                        PC = addr;
+
+                        Logger.DebugLog($"JMP (${ptr:X4}) => {addr:X4}");
                         break;
                     }
                 default:
